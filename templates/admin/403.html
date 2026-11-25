@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+    <div class="main-header">
+      <h1>无权限</h1>
+    </div>
+    <div class="main-inner" style="padding: 40px 24px;">
+      <p style="color:#6b7280;font-size:15px;">
+        您没有访问该功能的权限，请联系管理员。
+      </p>
+      <p>
+        <a href="{{ url_for('admin.materials') }}" class="btn">返回物料管理</a>
+      </p>
+    </div>
+  </main>
+</div>
+{% endblock %}

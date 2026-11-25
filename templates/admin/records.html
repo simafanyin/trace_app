@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+
+    <div class="main-header">
+      <h1>出入库记录</h1>
+    </div>
+
+    <!-- 查找条件 -->
+    <div class="filter-bar">
+      <form class="filter" method="get">
+        <input name="no" placeholder="物料号" value="{{ kw.no }}">
+        <input name="name" placeholder="物料名称" value="{{ kw.name }}">
+
+        <select name="belong">
+          <option value="">全部归属</option>
+          {% for b in belongs %}
+            <option value="{{ b }}" {% if kw.belong == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+
+        <button type="submit">查找</button>
+        <button type="button" class="btn-reset"
+                onclick="location.href='{{ url_for('admin.records') }}'">重置</button>
+      </form>
+    </div>
+
+    <!-- 列表 -->
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>类型</th>
+            <th>物料号</th>
+            <th>物料名</th>
+            <th>数量</th>
+            <th>操作员</th>
+            <th>归属</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in records %}
+          <tr>
+            <td>{{ r.created_at }}</td>
+            <td>
+              <span class="tag {{ 'in' if r.in_or_out=='in' else 'out' }}">
+                {{ '入库' if r.in_or_out=='in' else '出库' }}
+              </span>
+            </td>
+            <td>{{ r.material_no }}</td>
+            <td>{{ r.name or '-' }}</td>
+            <td>{{ r.quantity }}</td>
+            <td>{{ r.operator }}</td>
+            <td>{{ r.belong or '-' }}</td>
+            <td>{{ r.remark or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 分页 -->
+    <div class="pager">
+      <span class="total-info">共 <b>{{ total }}</b> 条记录</span>
+      <span class="page-info">
+        第 {{ page }} 页 / 共 {{ ((total - 1) // size) + 1 if total > 0 else 1 }} 页
+      </span>
+
+      {% if page > 1 %}
+        <a href="?no={{ kw.no|urlencode }}&name={{ kw.name|urlencode }}&belong={{ kw.belong|urlencode }}&page={{ page-1 }}">上一页</a>
+      {% else %}
+        <span class="disabled">上一页</span>
+      {% endif %}
+
+      {% if page * size < total %}
+        <a href="?no={{ kw.no|urlencode }}&name={{ kw.name|urlencode }}&belong={{ kw.belong|urlencode }}&page={{ page+1 }}">下一页</a>
+      {% else %}
+        <span class="disabled">下一页</span>
+      {% endif %}
+    </div>
+
+  </main>
+</div>
+{% endblock %}

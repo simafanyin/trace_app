@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+{% block head %}
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+{% endblock %}
+
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+
+    <div class="main-header">
+      <h1>数据统计</h1>
+    </div>
+
+    <!-- 查找条件 -->
+    <div class="filter-bar">
+      <form class="filter" id="statsForm" onsubmit="return false;">
+        <input name="no" id="kwNo" placeholder="物料号">
+        <input name="name" id="kwName" placeholder="物料名称">
+
+        <label class="filter-label">
+          开始月份 <span class="req">*</span>
+          <input type="month" name="start_month" id="startMonth" required>
+        </label>
+        <label class="filter-label">
+          结束月份 <span class="req">*</span>
+          <input type="month" name="end_month" id="endMonth" required>
+        </label>
+
+        <button type="button" onclick="loadCharts()">查询</button>
+        <button type="button" class="btn-reset" onclick="resetStats()">重置</button>
+      </form>
+    </div>
+
+    <!-- 图表区 -->
+    <div class="table-scroll">
+      <div class="stats-content">
+
+        <section class="chart-card">
+          <div class="chart-title">
+            领用趋势（按天，按归属）
+            <span class="chart-sub" id="lineSub"></span>
+            <span class="chart-tip">（点击某一天查看明细）</span>
+          </div>
+          <div class="chart-body">
+            <canvas id="lineChart"></canvas>
+          </div>
+        </section>
+
+        <section class="chart-card">
+          <div class="chart-title">
+            各归属领用次数
+            <span class="chart-sub" id="pieSub"></span>
+          </div>
+          <div class="chart-select-row">
+            <label>物料号
+              <input id="pieNo" placeholder="如 M001，必填">
+            </label>
+            <button type="button" onclick="loadPie()">更新饼图</button>
+          </div>
+          <div class="chart-body">
+            <canvas id="pieChart"></canvas>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ============ 某天领用明细（按归属分组） ============ -->
+<div id="dayDetailModal" class="modal">
+  <div class="modal-box modal-box-wide dd-modal">
+    <div class="dd-header">
+      <h3>领用明细 —— <span id="ddDate"></span></h3>
+      <button type="button" class="dd-close"
+              onclick="closeModal('dayDetailModal')">✕</button>
+    </div>
+
+    <div class="dd-summary" id="ddSummary"></div>
+
+    <div class="dd-groups" id="ddGroups"></div>
+
+    <div class="dd-body">
+      <table class="dd-table">
+        <thead>
+          <tr>
+            <th>归属</th>
+            <th>物料号</th>
+            <th>物料名称</th>
+            <th>数量</th>
+            <th>操作员</th>
+            <th>备注</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody id="ddTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('dayDetailModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let lineChartInstance = null;
+let pieChartInstance  = null;
+
+const BELONG_COLORS = {
+  '方一':    '#3b82f6',
+  '方二':    '#10b981',
+  '方三':    '#f59e0b',
+  '方向盘':  '#ef4444',
+  '踏板':    '#8b5cf6',
+  '基座':    '#06b6d4',
+  '支架':    '#ec4899',
+  '其他':    '#6b7280',
+};
+
+function colorForBelong(name, idx) {
+  if (BELONG_COLORS[name]) return BELONG_COLORS[name];
+  const fallback = ['#6366f1', '#14b8a6', '#f97316', '#a855f7', '#22c55e', '#eab308'];
+  return fallback[idx % fallback.length];
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// ---------- 初始化当前月 ----------
+(function initMonths() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const ym = `${y}-${m}`;
+  document.getElementById('startMonth').value = ym;
+  document.getElementById('endMonth').value = ym;
+})();
+
+// ---------- 校验 ----------
+function validateMonths() {
+  const s = document.getElementById('startMonth').value;
+  const e = document.getElementById('endMonth').value;
+  if (!s || !e) { alert('请选择开始月份和结束月份'); return null; }
+  if (s > e) { alert('开始月份不能晚于结束月份'); return null; }
+  return { s, e };
+}
+
+function currentFilters() {
+  return {
+    no: document.getElementById('kwNo').value.trim(),
+    name: document.getElementById('kwName').value.trim(),
+  };
+}
+
+// ---------- 加载 ----------
+async function loadCharts() {
+  const m = validateMonths();
+  if (!m) return;
+
+  const f = currentFilters();
+  const q = new URLSearchParams({
+    no: f.no, name: f.name,
+    start_month: m.s, end_month: m.e,
+  });
+
+  await loadLine(q);
+
+  const pieNo = document.getElementById('pieNo').value.trim();
+  if (pieNo) await loadPie();
+  else clearPie();
+}
+
+async function loadLine(q) {
+  try {
+    const r = await fetch('/api/stats/daily_by_belong?' + q.toString(),
+                          {headers: {'Accept': 'application/json'}});
+    if (!r.ok) {
+      console.error('HTTP', r.status, (await r.text()).slice(0, 300));
+      alert('折线图接口返回 ' + r.status);
+      return;
+    }
+    const j = await r.json();
+    if (!j.ok) { alert(j.msg || '查询失败'); return; }
+
+    document.getElementById('lineSub').textContent =
+      `共 ${j.labels.length} 天，${j.series.length} 个归属`;
+
+    drawLine(j.labels, j.series);
+  } catch (err) {
+    alert('折线图加载失败：' + err.message);
+  }
+}
+
+async function loadPie() {
+  const m = validateMonths();
+  if (!m) return;
+  const pieNo = document.getElementById('pieNo').value.trim();
+  if (!pieNo) { alert('请填写物料号'); return; }
+
+  const q = new URLSearchParams({
+    no: pieNo, start_month: m.s, end_month: m.e,
+  });
+
+  try {
+    const r = await fetch('/api/stats/pie_by_belong?' + q.toString(),
+                          {headers: {'Accept': 'application/json'}});
+    if (!r.ok) {
+      console.error('HTTP', r.status, (await r.text()).slice(0, 300));
+      alert('饼图接口返回 ' + r.status);
+      return;
+    }
+    const j = await r.json();
+    if (!j.ok) { alert(j.msg || '查询失败'); return; }
+
+    if (!j.labels.length) {
+      document.getElementById('pieSub').textContent = '无领用记录';
+      clearPie();
+      return;
+    }
+
+    const total = j.values.reduce((a, b) => a + b, 0);
+    document.getElementById('pieSub').textContent =
+      `物料 ${pieNo}，共 ${total} 次领用`;
+
+    drawPie(j.labels, j.values);
+  } catch (err) {
+    alert('饼图加载失败：' + err.message);
+  }
+}
+
+function resetStats() {
+  document.getElementById('kwNo').value = '';
+  document.getElementById('kwName').value = '';
+  document.getElementById('pieNo').value = '';
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const ym = `${y}-${m}`;
+  document.getElementById('startMonth').value = ym;
+  document.getElementById('endMonth').value = ym;
+  if (lineChartInstance) { lineChartInstance.destroy(); lineChartInstance = null; }
+  clearPie();
+  document.getElementById('lineSub').textContent = '';
+}
+
+// ---------- 折线图 ----------
+function drawLine(labels, series) {
+  const ctx = document.getElementById('lineChart').getContext('2d');
+  if (lineChartInstance) lineChartInstance.destroy();
+
+  const datasets = series.map((s, i) => ({
+    label: s.belong,
+    data: s.data,
+    borderColor: colorForBelong(s.belong, i),
+    backgroundColor: colorForBelong(s.belong, i) + '33',
+    tension: 0.25,
+    fill: false,
+    pointRadius: 2,
+    pointHoverRadius: 5,
+    borderWidth: 2,
+  }));
+
+  lineChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onClick: (evt, elements, chart) => {
+        let idx = null;
+        if (elements && elements.length) idx = elements[0].index;
+        else {
+          const x = evt.x;
+          if (x == null) return;
+          const xScale = chart.scales.x;
+          idx = Math.round(xScale.getValueForPixel(x));
+        }
+        const day = chart.data.labels[idx];
+        if (day) showDayDetail(day);
+      },
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0]?.label || '',
+            label: (ctx) => `${ctx.dataset.label}：${ctx.parsed.y} 件`,
+            afterBody: () => '点击查看明细',
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: '日期' },
+          ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 20 },
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: '领用数量' },
+          ticks: { stepSize: 1 },
+        },
+      },
+    },
+  });
+}
+
+// ---------- 饼图 ----------
+function drawPie(labels, values) {
+  const ctx = document.getElementById('pieChart').getContext('2d');
+  if (pieChartInstance) pieChartInstance.destroy();
+
+  pieChartInstance = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: labels.map((l, i) => colorForBelong(l, i)),
+        borderColor: '#fff',
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right' },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const v = ctx.parsed;
+              const pct = total ? ((v / total) * 100).toFixed(1) : 0;
+              return `${ctx.label}：${v} 次（${pct}%）`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function clearPie() {
+  document.getElementById('pieSub').textContent = '';
+  if (pieChartInstance) {
+    pieChartInstance.destroy();
+    pieChartInstance = null;
+  }
+}
+
+// ---------- 明细 ----------
+async function showDayDetail(day) {
+  if (!day) return;
+  const f = currentFilters();
+  const q = new URLSearchParams({ date: day, no: f.no, name: f.name });
+
+  try {
+    const r = await fetch('/api/stats/day_detail?' + q.toString(),
+                          {headers: {'Accept': 'application/json'}});
+    if (!r.ok) {
+      console.error('HTTP', r.status, (await r.text()).slice(0, 300));
+      alert('明细接口返回 ' + r.status);
+      return;
+    }
+    const j = await r.json();
+    if (!j.ok) { alert(j.msg || '查询失败'); return; }
+    renderDayDetail(j);
+  } catch (err) {
+    alert('明细加载失败：' + err.message);
+  }
+}
+
+function renderDayDetail(j) {
+  document.getElementById('ddDate').textContent = j.date;
+  document.getElementById('ddSummary').textContent =
+    `共 ${j.total_rows} 条，合计 ${j.total_qty} 件，${j.groups.length} 个归属`;
+
+  const groupsWrap = document.getElementById('ddGroups');
+  const tbody = document.getElementById('ddTbody');
+
+  if (!j.groups.length) {
+    groupsWrap.innerHTML = `<div class="dd-empty" style="padding:20px;color:#9ca3af;">当天无领用记录</div>`;
+    tbody.innerHTML = '';
+    openModal('dayDetailModal');
+    return;
+  }
+
+  groupsWrap.innerHTML = j.groups.map((g, i) => {
+    const c = colorForBelong(g.belong, i);
+    return `
+      <div class="dd-group-chip" style="border-color:${c}; background:${c}11;">
+        <div class="dd-group-name" style="color:${c};">${escapeHtml(g.belong)}</div>
+        <div class="dd-group-nums">
+          <span>${g.rows_count} 条</span><span class="dot">·</span><span>${g.qty_sum} 件</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  tbody.innerHTML = '';
+  j.groups.forEach((g, i) => {
+    const c = colorForBelong(g.belong, i);
+
+    const titleTr = document.createElement('tr');
+    titleTr.className = 'dd-group-row';
+    titleTr.innerHTML = `
+      <td colspan="7" style="background:${c}11; border-left:4px solid ${c};">
+        <b style="color:${c};">${escapeHtml(g.belong)}</b>
+        <span class="dd-group-meta">${g.rows_count} 条 · ${g.qty_sum} 件</span>
+      </td>`;
+    tbody.appendChild(titleTr);
+
+    g.items.forEach(it => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="color:${c};font-weight:600;">${escapeHtml(g.belong)}</td>
+        <td>${escapeHtml(it.material_no)}</td>
+        <td>${escapeHtml(it.material_name || '-')}</td>
+        <td class="qty">${it.quantity}</td>
+        <td>${escapeHtml(it.operator || '-')}</td>
+        <td class="remark-cell" title="${escapeHtml(it.remark || '')}">${escapeHtml(it.remark || '-')}</td>
+        <td>${escapeHtml(it.created_at)}</td>`;
+      tbody.appendChild(tr);
+    });
+  });
+
+  openModal('dayDetailModal');
+}
+
+// ---------- 自动加载 ----------
+window.addEventListener('DOMContentLoaded', () => {
+  loadCharts();
+});
+</script>
+{% endblock %}

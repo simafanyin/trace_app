@@ -1,0 +1,853 @@
+{% extends "base.html" %}
+
+{# ============ URL 拼装宏 ============ #}
+{% macro build_url(no=kw.no, name=kw.name, category_0=kw.category_0, category=kw.category,
+                   sort=sort, order=order, page=1) -%}
+  ?no={{ no|urlencode }}&name={{ name|urlencode }}&category={{ category|urlencode }}&category_0={{ category_0|urlencode }}
+  &sort={{ sort|urlencode }}&order={{ order|urlencode }}&page={{ page }}
+{%- endmacro %}
+
+{% macro sort_head(field, label) -%}
+  {% set next_order = 'asc' if (sort != field or order == 'desc') else 'desc' %}
+  {% set arrow = '⇅' %}
+  {% if sort == field %}
+    {% set arrow = '▲' if order == 'asc' else '▼' %}
+  {% endif %}
+  <a class="sort-link" href="{{ build_url(sort=field, order=next_order, page=1) }}">
+    {{ label }} <span class="arrow {% if sort==field %}active{% endif %}">{{ arrow }}</span>
+  </a>
+{%- endmacro %}
+
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+    <!-- 1. 标题（固定） -->
+    <div class="main-header">
+      <h1>物料管理</h1>
+    </div>
+  
+    <!-- 2. 查找条件（固定） -->
+    <div class="filter-bar">
+      <form class="filter" method="get" id="searchForm">
+        <input name="no" placeholder="物料号" value="{{ kw.no }}">
+        <input name="name" placeholder="物料名称" value="{{ kw.name }}">
+        <select name="category_0">
+          <option value="">一级分类</option>
+          <option value="耗材" {% if kw.category_0 == '耗材' %}selected{% endif %}>耗材</option>
+          <option value="工具" {% if kw.category_0 == '工具' %}selected{% endif %}>工具</option>
+        </select>
+        <select name="category">
+          <option value="">二级分类</option>
+          {% for t in types %}
+            <option value="{{ t.category }}"
+              {% if kw.category == t.category %}selected{% endif %}>
+              {{ t.category }}
+            </option>
+          {% endfor %}
+        </select>
+  
+        <input type="hidden" name="sort"  value="{{ sort }}">
+        <input type="hidden" name="order" value="{{ order }}">
+  
+        <button type="submit">查找</button>
+        <button type="button" class="btn-reset" onclick="resetSearch()">重置</button>
+  
+        {% if has_perm('materials', 'edit') %}
+          <button type="button" onclick="openModal('newModal')">+ 新增物料</button>
+          <button type="button" onclick="openModal('importModal')">导入</button>
+        {% endif %}
+        <a class="btn" href="{{ url_for('admin.materials_export') }}">导出</a>
+      </form>
+    </div>
+  
+    <!-- 3. 表格容器（内部滚动） -->
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:56px;">序号</th>
+            <th>图片</th>
+            <th>{{ sort_head('material_no', '物料号') }}</th>
+            <th>{{ sort_head('name', '名称') }}</th>
+            <th>规格</th>
+            <th>一级分类</th>
+            <th>{{ sort_head('category', '分类') }}</th>
+            <th>单位</th>
+            <th>SKU</th>
+            <th>备注</th>
+            <th>{{ sort_head('quantity', '库存') }}</th>
+            <th>预警值</th>
+            <th>{{ sort_head('updated_at', '更新时间') }}</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in materials %}
+          <tr>
+            <td>{{ (page - 1) * size + loop.index }}</td>
+            <td>
+              {% if m.image_thumb or m.image %}
+                <img class="thumb"
+                     src="{{ url_for('static', filename=m.image_thumb or m.image) }}"
+                     data-src="{{ url_for('static', filename=m.image or m.image_thumb) }}"
+                     alt="{{ m.name }}">
+              {% else %}
+                <span class="no-img">—</span>
+              {% endif %}
+            </td>
+            <td>{{ m.material_no }}</td>
+            <td>{{ m.name }}</td>
+            <td>{{ m.spec }}</td>
+            <td>{{ m.category_0 }}</td>
+            <td>{{ m.category }}</td>
+            <td>{{ m.unit }}</td>
+            <!-- ★ sku截断：只显示前 20 字，悬停看全文 -->
+            <td class="remark-cell" title="{{ m.sku or '' }}">
+              {% if m.sku %}
+                {{ m.sku[:20] }}{% if m.sku|length > 20 %}…{% endif %}
+              {% else %}
+                <span class="no-img">—</span>
+              {% endif %}
+            </td>
+            
+             <!-- ★ 备注截断：只显示前 10 字，悬停看全文 -->
+            <td class="remark-cell" title="{{ m.remark or '' }}">
+              {% if m.remark %}
+                {{ m.remark[:10] }}{% if m.remark|length > 10 %}…{% endif %}
+              {% else %}
+                <span class="no-img">—</span>
+              {% endif %}
+            </td>
+            {# 库存：小于等于预警值且预警值不为空 → 红色 #}
+            {% set is_warning = m.warn_qty is not none and m.warn_qty != '' and m.quantity <= m.warn_qty %}
+            <td class="qty-cell {% if is_warning %}qty-warning{% endif %}">
+              {{ m.quantity }}
+            </td>
+            <td>{{ m.warn_qty if m.warn_qty is not none and m.warn_qty != '' else '-' }}</td>
+            <td>{{ m.updated_at }}</td>
+            <td class="op-cell">
+              <button class="btn-detail-material"
+                data-no="{{ m.material_no }}">详情</button>
+              {% if has_perm('materials', 'edit') %}
+                <button class="btn-edit-material" data-material='{{ m | tojson | e }}'>编辑</button>
+                <button class="btn-stocktake"
+                        data-no="{{ m.material_no }}"
+                        data-name="{{ m.name|e }}"
+                        data-qty="{{ m.quantity }}">盘点</button>
+                <button class="btn-inbound"
+                        data-no="{{ m.material_no }}"
+                        data-name="{{ m.name|e }}"
+                        data-qty="{{ m.quantity }}">入库</button>
+                <button class="btn-outbound"
+                        data-no="{{ m.material_no }}"
+                        data-name="{{ m.name|e }}"
+                        data-qty="{{ m.quantity }}">出库</button>
+                <button onclick="delMaterial('{{ m.material_no }}')">删除</button>
+              {% else %}
+                <span class="no-img">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  
+    <!-- 4. 分页（固定） -->
+    <div class="pager">
+      <span class="total-info">共 <b>{{ total }}</b> 条记录</span>
+      <span class="page-info">
+        第 {{ page }} 页 / 共 {{ ((total - 1) // size) + 1 if total > 0 else 1 }} 页
+      </span>
+      {% if page > 1 %}
+        <a href="{{ build_url(page=page-1) }}">上一页</a>
+      {% else %}
+        <span class="disabled">上一页</span>
+      {% endif %}
+      {% if page * size < total %}
+        <a href="{{ build_url(page=page+1) }}">下一页</a>
+      {% else %}
+        <span class="disabled">下一页</span>
+      {% endif %}
+    </div>
+  </main>
+</div>
+
+<!-- ============ 新增 ============ -->
+<div id="newModal" class="modal">
+  <form class="modal-box" method="post"
+        action="{{ url_for('admin.material_new') }}"
+        enctype="multipart/form-data"
+        onsubmit="return submitJson(event,this)">
+    <h3>新增物料</h3>
+    <input name="material_no" placeholder="物料号*" required>
+    <input name="name" placeholder="物料名称*" required>
+    <input name="spec" placeholder="规格型号">
+    <select name="category_0" required>
+      <option value="">一级分类</option>
+        <option value="耗材">耗材</option>
+        <option value="工具">工具</option>
+      </option>
+    </select>
+    <select name="category">
+      {% for t in types %}<option value="{{ t.category }}">{{ t.category }}</option>{% endfor %}
+    </select>
+
+    <input name="unit" placeholder="单位">
+    <input name="quantity" type="number" placeholder="库存" value="0">
+    <div class="edit-field">
+      <label>预警值</label>
+      <input name="warn_qty" type="number" min="0" placeholder="库存 ≤ 预警值时高亮（可选）">
+    </div>
+    <textarea name="sku" class="edit-sku" rows="2"
+          placeholder="SKU（长文本，可多行）"></textarea>
+    <textarea name="remark" placeholder="备注"></textarea>
+
+    <label class="upload-line">
+      图片：
+      <input type="file" name="image" accept="image/*" onchange="preview(this,'newPreview')">
+    </label>
+    <img id="newPreview" class="preview" style="display:none;">
+
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('newModal')">取消</button>
+      <button>保存</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ 编辑 ============ -->
+<!-- ============ 编辑物料 ============ -->
+<div id="editModal" class="modal">
+  <form class="modal-box modal-box-wide edit-modal"
+        method="post" id="editForm"
+        enctype="multipart/form-data"
+        onsubmit="return submitJson(event,this)">
+
+    <!-- 头部：与详情页一致 -->
+    <div class="edit-header">
+      <h3>编辑物料</h3>
+      <button type="button" class="edit-close"
+              onclick="closeModal('editModal')">✕</button>
+    </div>
+
+    <!-- 主体：两栏布局，与详情页 .detail-body 一致 -->
+    <div class="edit-body">
+
+      <!-- ========== 左侧：图片（与详情页 .detail-image-panel 一致） ========== -->
+      <div class="detail-image-panel">
+        <div class="detail-image-wrap">
+          <img id="editCurrentImg" src="" alt="" style="display:none;">
+          <div id="editNoImg" class="no-img-box">暂无图片</div>
+        </div>
+
+        <div class="detail-image-caption">点击图片可放大</div>
+
+        <label class="file-label">
+          <input type="file" name="image" accept="image/*"
+                 onchange="preview(this,'editPreview')" hidden>
+          <span class="file-btn">选择图片</span>
+        </label>
+
+        <label class="remove-line">
+          <input type="checkbox" name="remove_image" value="1">
+          <span>删除当前图片</span>
+        </label>
+
+        <!-- 新图预览 -->
+        <div class="edit-preview-wrap">
+          <img id="editPreview" class="preview" style="display:none;" alt="预览">
+        </div>
+      </div>
+
+      <!-- ========== 右侧：字段（与详情页 .detail-fields 一致） ========== -->
+      <div class="detail-fields">
+
+        <!-- 分组：基本信息 -->
+        <div class="detail-section">
+          <div class="detail-section-title">基本信息</div>
+
+          <div class="edit-field">
+            <label>物料号 <span class="req">*</span></label>
+            <input name="material_no" readonly title="物料号不可修改">
+          </div>
+
+          <div class="edit-field">
+            <label>物料名称 <span class="req">*</span></label>
+            <input name="name" placeholder="请输入物料名称" required>
+          </div>
+
+          <div class="edit-field">
+            <label>规格型号</label>
+            <input name="spec" placeholder="如 M4*10">
+          </div>
+
+          <div class="edit-field">
+            <label>一级分类</label>
+            <select name="category_0" id="editCategory_0">
+              <option value="耗材">耗材</option>
+              <option value="工具">工具</option>
+            </select>
+          </div>
+          <div class="edit-field">
+            <label>分类名称</label>
+            <select name="category" id="editCategory">
+              {% for t in types %}
+                <option value="{{ t.category }}">{{ t.category }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="edit-field">
+            <label>单位</label>
+            <input name="unit" placeholder="如 个 / 盒 / 双">
+          </div>
+        </div>
+
+        <!-- 分组：扩展信息 -->
+        <div class="detail-section">
+          <div class="detail-section-title">扩展信息</div>
+
+          <div class="edit-field">
+            <label>SKU</label>
+            <textarea name="sku" class="edit-sku"
+                      placeholder="长文本，如 SKU-2024-001，可多行"
+                      rows="3"></textarea>
+          </div>
+
+          <div class="edit-field">
+            <label>当前库存</label>
+            <input name="quantity" type="number" readonly
+                   title="库存通过入库 / 出库 / 盘点修改">
+            <div class="edit-tip">库存请通过入库 / 出库 / 盘点操作修改</div>
+          </div>
+
+          <div class="edit-field">
+            <label>预警值</label>
+            <input name="warn_qty" type="number" min="0" placeholder="库存 ≤ 预警值时高亮（可选）">
+          </div>
+        </div>
+
+        <!-- 分组：备注 -->
+        <div class="detail-section">
+          <div class="detail-section-title">备注</div>
+          <textarea name="remark" class="edit-remark"
+                    placeholder="填写备注信息（可选）"></textarea>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div class="edit-footer">
+      <button type="button" class="btn-secondary"
+              onclick="closeModal('editModal')">取消</button>
+      <button type="submit" class="btn-primary">保存</button>
+    </div>
+
+  </form>
+</div>
+
+<!-- ============ 导入 ============ -->
+<div id="importModal" class="modal">
+  <form class="modal-box" method="post"
+        action="{{ url_for('admin.materials_import') }}"
+        enctype="multipart/form-data"
+        onsubmit="return submitImport(event,this)">
+    <h3>导入物料</h3>
+    <p><a href="{{ url_for('admin.materials_template') }}">下载导入模板</a></p>
+    <input type="file" name="file" accept=".xlsx" required>
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('importModal')">取消</button>
+      <button>导入</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ 入库弹框 ============ -->
+<div id="inboundModal" class="modal">
+  <form class="modal-box" id="inboundForm">
+    <h3>入库</h3>
+    <div class="modal-info">
+      <div class="row"><span>物料号</span><b id="inMaterialNo"></b></div>
+      <div class="row"><span>名称</span><b id="inMaterialName"></b></div>
+      <div class="row"><span>当前库存</span><b id="inMaterialQty" class="qty"></b></div>
+    </div>
+    <input type="hidden" name="material_no" id="inMaterialNoInput">
+    <input name="quantity" type="number" min="1" placeholder="入库数量*" required>
+    <textarea name="remark" placeholder="备注（可选）"></textarea>
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('inboundModal')">取消</button>
+      <button type="submit">确认入库</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ 出库弹框 ============ -->
+<div id="outboundModal" class="modal">
+  <form class="modal-box" id="outboundForm">
+    <h3>领用出库</h3>
+    <div class="modal-info">
+      <div class="row"><span>物料号</span><b id="outMaterialNo"></b></div>
+      <div class="row"><span>名称</span><b id="outMaterialName"></b></div>
+      <div class="row"><span>当前库存</span><b id="outMaterialQty" class="qty"></b></div>
+    </div>
+    <input type="hidden" name="material_no" id="outMaterialNoInput">
+    <input name="quantity" type="number" min="1" placeholder="领用数量*" required>
+    <select name="belong" required>
+      <option value="">请选择归属*</option>
+      {% for b in belongs %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+    </select>
+    <textarea name="remark" placeholder="备注（可选）"></textarea>
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('outboundModal')">取消</button>
+      <button type="submit">确认出库</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ 盘点弹框 ============ -->
+<div id="stocktakeModal" class="modal">
+  <form class="modal-box" id="stocktakeForm">
+    <h3>数据盘点</h3>
+    <div class="modal-info">
+      <div class="row"><span>物料号</span><b id="stMaterialNo"></b></div>
+      <div class="row"><span>名称</span><b id="stMaterialName"></b></div>
+      <div class="row"><span>当前库存</span><b id="stMaterialQty" class="qty"></b></div>
+    </div>
+    <input type="hidden" name="material_no" id="stMaterialNoInput">
+    <input name="after_qty" type="number" min="0" placeholder="盘点后数量*" required>
+    <textarea name="remark" placeholder="备注（可选）"></textarea>
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('stocktakeModal')">取消</button>
+      <button type="submit">提交盘点</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ 物料详情 ============ -->
+<div id="detailModal" class="modal">
+  <div class="modal-box modal-box-wide detail-modal">
+    <div class="detail-header">
+      <h3>物料详情</h3>
+      <button type="button" class="detail-close" onclick="closeModal('detailModal')">✕</button>
+    </div>
+
+    <div class="detail-body">
+      <!-- 左侧：图片 -->
+      <div class="detail-image-panel">
+        <div class="detail-image-wrap">
+          <img id="dImage" src="" alt="" style="display:none;">
+          <div id="dNoImage" class="no-img-box">暂无图片</div>
+        </div>
+        <div class="detail-image-caption">点击图片可放大</div>
+      </div>
+
+      <!-- 右侧：字段 -->
+      <div class="detail-fields">
+
+        <!-- 第一组：基本信息 -->
+        <div class="detail-section">
+          <div class="detail-section-title">基本信息</div>
+          <div class="detail-grid">
+            <div class="detail-row">
+              <span class="label">物料号</span>
+              <b class="value" id="dMaterialNoV">-</b>
+            </div>
+            <div class="detail-row">
+              <span class="label">名称</span>
+              <b class="value" id="dName">-</b>
+            </div>
+            <div class="detail-row">
+              <span class="label">规格型号</span>
+              <b class="value" id="dSpec">-</b>
+            </div>
+            <div class="detail-row">
+              <span class="label">分类</span>
+              <b class="value" id="dCategory">-</b>
+            </div>
+            <div class="detail-row">
+              <span class="label">单位</span>
+              <b class="value" id="dUnit">-</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第二组：扩展信息 -->
+        <div class="detail-section">
+          <div class="detail-section-title">扩展信息</div>
+          <div class="detail-grid">
+            <div class="detail-row">
+              <span class="label">SKU</span>
+              <b class="value value-copyable" id="dSku">-</b>
+              <button type="button" class="copy-btn" id="copySkuBtn" title="复制" style="display:none;">复制</button>
+            </div>
+            <div class="detail-row">
+              <span class="label">当前库存</span>
+              <b class="value value-qty" id="dQuantity">0</b>
+            </div>
+            <div class="detail-row">
+              <span class="label">预警值</span>
+              <b class="value" id="dWarnQty">-</b>
+            </div>
+            <div class="detail-row">
+              <span class="label">更新时间</span>
+              <b class="value value-time" id="dUpdatedAt">-</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- 第三组：备注 -->
+        <div class="detail-section">
+          <div class="detail-section-title">备注</div>
+          <div class="detail-remark-box" id="dRemarkBox">
+            <span id="dRemark">无</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 图片放大浮层 ============ -->
+<div id="bigImgLayer" class="big-img-layer" onclick="hideBig()">
+  <img id="bigImg" src="">
+</div>
+
+<script>
+/* ============ 基础 ============ */
+function openModal(id){ document.getElementById(id).style.display = 'flex'; }
+function closeModal(id){ document.getElementById(id).style.display = 'none'; }
+
+function resetSearch(){
+  location.href = location.pathname + '?page=1';
+}
+
+/* ============ 缩略图放大 ============ */
+document.querySelectorAll('.thumb').forEach(img => {
+  img.addEventListener('click', () => showBig(img.dataset.src));
+});
+
+/* ============ 编辑物料 ============ */
+function editMaterial(m){
+  const f = document.getElementById('editForm');
+  f.action = '/admin/materials/' + m.material_no + '/edit';
+  const simpleFields = ['material_no','name','spec','unit','quantity','remark','sku','warn_qty'];
+  for (const k of simpleFields) {
+    if (f[k]) f[k].value = m[k] ?? '';
+  }
+
+  // 分类 select
+  const sel = document.getElementById('editCategory');
+  if (sel) {
+    const target = m.category ?? '';
+    let matched = false;
+    for (const opt of sel.options) {
+      if (opt.value === target) { opt.selected = true; matched = true; }
+      else { opt.selected = false; }
+    }
+    if (!matched) sel.selectedIndex = -1;
+  }
+
+   // 一级分类分类 select
+   const sel0 = document.getElementById('editCategory_0');
+   if (sel0) {
+     const target = m.category_0 ?? '';
+     let matched = false;
+     for (const opt of sel0.options) {
+       if (opt.value === target) { opt.selected = true; matched = true; }
+       else { opt.selected = false; }
+     }
+     if (!matched) sel0.selectedIndex = -1;
+   }
+
+  // 当前图片
+  const cur  = document.getElementById('editCurrentImg');
+  const none = document.getElementById('editNoImg');
+  if (m.image) {
+    cur.src = '/static/' + (m.image_thumb || m.image);
+    cur.style.display = 'block';
+    cur.onclick = () => showBig('/static/' + m.image);
+    none.style.display = 'none';
+  } else {
+    cur.style.display = 'none';
+    none.style.display = 'block';
+  }
+
+  // 清空新选文件 & 预览 & 删除勾选
+  f.image.value = '';
+  const prev = document.getElementById('editPreview');
+  prev.style.display = 'none';
+  prev.src = '';
+  if (f.remove_image) f.remove_image.checked = false;
+
+  openModal('editModal');
+}
+
+document.querySelectorAll('.btn-edit-material').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const m = JSON.parse(btn.dataset.material);
+    editMaterial(m);
+  });
+});
+
+/* ============ 图片预览 ============ */
+function preview(input, previewId){
+  const p = document.getElementById(previewId);
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => { p.src = e.target.result; p.style.display = 'block'; };
+    reader.readAsDataURL(input.files[0]);
+  } else {
+    p.style.display = 'none'; p.src = '';
+  }
+}
+
+/* ============ 放大 ============ */
+function showBig(src){
+  document.getElementById('bigImg').src = src;
+  document.getElementById('bigImgLayer').style.display = 'flex';
+}
+function hideBig(){
+  document.getElementById('bigImgLayer').style.display = 'none';
+}
+
+/* ============ 新增/编辑：提交 ============ */
+async function submitJson(e, form){
+  e.preventDefault();
+  const r = await fetch(form.action, {method:'POST', body:new FormData(form)});
+  const j = await r.json();
+  if (j.ok) location.reload(); else alert(j.msg || '失败');
+  return false;
+}
+
+/* ============ 导入 ============ */
+async function submitImport(e, form){
+  e.preventDefault();
+  const r = await fetch(form.action, {method:'POST', body:new FormData(form)});
+  const j = await r.json();
+  alert(j.msg || '完成');
+  if (j.ok) location.reload();
+  return false;
+}
+
+/* ============ 删除 ============ */
+async function delMaterial(no){
+  if (!confirm('确认删除 ' + no + ' ？')) return;
+  await fetch('/admin/materials/' + no + '/delete', {method:'POST'});
+  location.reload();
+}
+
+/* ============ 入库 ============ */
+function openInbound(no, name, qty){
+  document.getElementById('inMaterialNo').textContent   = no;
+  document.getElementById('inMaterialName').textContent = name;
+  document.getElementById('inMaterialQty').textContent  = qty;
+  const f = document.getElementById('inboundForm');
+  f.reset();
+  document.getElementById('inMaterialNoInput').value = no;
+  openModal('inboundModal');
+}
+
+document.getElementById('inboundForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const no = document.getElementById('inMaterialNoInput').value;
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/admin/materials/${encodeURIComponent(no)}/inbound`, {
+      method: 'POST', body: new FormData(form)
+    });
+    const j = await r.json();
+    if (j.ok) { alert(j.msg || '入库成功'); location.reload(); }
+    else { alert(j.msg || '失败'); btn.disabled = false; }
+  } catch (err) {
+    alert('网络错误：' + err.message);
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.btn-inbound').forEach(btn => {
+  btn.addEventListener('click', () => {
+    openInbound(btn.dataset.no, btn.dataset.name, +btn.dataset.qty);
+  });
+});
+
+/* ============ 出库 ============ */
+function openOutbound(no, name, qty){
+  document.getElementById('outMaterialNo').textContent   = no;
+  document.getElementById('outMaterialName').textContent = name;
+  document.getElementById('outMaterialQty').textContent  = qty;
+  const f = document.getElementById('outboundForm');
+  f.reset();
+  document.getElementById('outMaterialNoInput').value = no;
+  f.quantity.max = qty;
+  openModal('outboundModal');
+}
+
+document.getElementById('outboundForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  if (!form.belong.value) { alert('请选择归属'); return; }
+
+  const no = document.getElementById('outMaterialNoInput').value;
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/admin/materials/${encodeURIComponent(no)}/outbound`, {
+      method: 'POST', body: new FormData(form)
+    });
+    const j = await r.json();
+    if (j.ok) { alert(j.msg || '出库成功'); location.reload(); }
+    else { alert(j.msg || '失败'); btn.disabled = false; }
+  } catch (err) {
+    alert('网络错误：' + err.message);
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.btn-outbound').forEach(btn => {
+  btn.addEventListener('click', () => {
+    openOutbound(btn.dataset.no, btn.dataset.name, +btn.dataset.qty);
+  });
+});
+
+/* ============ 盘点 ============ */
+function openStocktake(no, name, qty){
+  document.getElementById('stMaterialNo').textContent   = no;
+  document.getElementById('stMaterialName').textContent = name;
+  document.getElementById('stMaterialQty').textContent  = qty;
+  const f = document.getElementById('stocktakeForm');
+  f.reset();
+  document.getElementById('stMaterialNoInput').value = no;
+  f.after_qty.value = qty;
+  openModal('stocktakeModal');
+}
+
+document.getElementById('stocktakeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const no = document.getElementById('stMaterialNoInput').value;
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/admin/materials/${encodeURIComponent(no)}/stocktake`, {
+      method: 'POST', body: new FormData(form)
+    });
+    const j = await r.json();
+    if (j.ok) { alert(j.msg || '盘点成功'); location.reload(); }
+    else { alert(j.msg || '失败'); btn.disabled = false; }
+  } catch (err) {
+    alert('网络错误：' + err.message);
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.btn-stocktake').forEach(btn => {
+  btn.addEventListener('click', () => {
+    openStocktake(btn.dataset.no, btn.dataset.name, +btn.dataset.qty);
+  });
+});
+
+
+/* ============ 详情 ============ */
+document.querySelectorAll('.btn-detail-material').forEach(btn => {
+  btn.addEventListener('click', () => openDetail(btn.dataset.no));
+});
+
+async function openDetail(no){
+  const r = await fetch(`/admin/materials/${encodeURIComponent(no)}/detail`);
+  const j = await r.json();
+  if (!j.ok) { alert(j.msg || '读取失败'); return; }
+
+  const d = j.data;
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) {
+      console.warn("元素不存在, id =", id);
+      return;
+    }
+    document.getElementById(id).textContent = (val === null || val === undefined || val === '') ? '-' : val;
+  };
+
+  // 基本信息
+  setText('dMaterialNoV', d.material_no);
+  setText('dName', d.name);
+  setText('dSpec', d.spec);
+  setText('dCategory_0', d.category_0);
+  setText('dCategory', d.category);
+  setText('dUnit', d.unit);
+
+  // 扩展信息
+  setText('dSku', d.sku);
+  document.getElementById('dQuantity').textContent = d.quantity ?? 0;
+  setText('dUpdatedAt', d.updated_at);
+
+  // SKU 复制按钮
+  const copyBtn = document.getElementById('copySkuBtn');
+  if (d.sku) {
+    copyBtn.style.display = 'inline-block';
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(d.sku).then(() => {
+        copyBtn.textContent = '已复制';
+        setTimeout(() => copyBtn.textContent = '复制', 1200);
+      }).catch(() => {
+        // 兼容不支持 clipboard 的浏览器
+        const ta = document.createElement('textarea');
+        ta.value = d.sku;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        copyBtn.textContent = '已复制';
+        setTimeout(() => copyBtn.textContent = '复制', 1200);
+      });
+    };
+  } else {
+    copyBtn.style.display = 'none';
+  }
+
+  // 警戒值
+  setText('dWarnQty', d.warn_qty);
+
+  const qtyEl = document.getElementById('dQuantity');
+  qtyEl.textContent = d.quantity ?? 0;
+  if (d.warn_qty != null && d.warn_qty !== '' && d.quantity <= d.warn_qty) {
+    qtyEl.classList.add('qty-warning');
+  } else {
+    qtyEl.classList.remove('qty-warning');
+  }
+
+  // 备注
+  const remarkBox = document.getElementById('dRemark');
+  if (d.remark) {
+    remarkBox.textContent = d.remark;
+    remarkBox.classList.remove('empty');
+  } else {
+    remarkBox.textContent = '无';
+    remarkBox.classList.add('empty');
+  }
+
+  // 图片
+  const img = document.getElementById('dImage');
+  const none = document.getElementById('dNoImage');
+  const thumbUrl = d.image_thumb_url || d.image_url;
+  const bigUrl   = d.image_url || d.image_thumb_url;
+
+  if (thumbUrl) {
+    img.src = thumbUrl;
+    img.style.display = 'block';
+    img.onclick = () => showBig(bigUrl);
+    none.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    none.style.display = 'block';
+  }
+
+  openModal('detailModal');
+}
+</script>
+{% endblock %}

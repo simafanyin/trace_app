@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="login-wrap">
+  <form method="post" class="login-card">
+    <h1>后台登录</h1>
+    {% with m = get_flashed_messages() %}
+      {% if m %}<p class="err">{{ m[0] }}</p>{% endif %}
+    {% endwith %}
+    <input name="user_name" placeholder="账号" required>
+    <input name="password" type="password" placeholder="密码" required>
+    <button>登录</button>
+    <p class="hint">默认 admin / admin123，请首次登录后修改</p>
+  </form>
+</div>
+{% endblock %}

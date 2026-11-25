@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+
+    <div class="main-header">
+      <h1>操作日志</h1>
+    </div>
+
+    <div class="filter-bar">
+      <form class="filter" method="get">
+        <input name="u" placeholder="操作人" value="{{ kw.u }}">
+        <button>查找</button>
+        <button type="button" class="btn-reset"
+                onclick="location.href='{{ url_for('admin.logs') }}'">重置</button>
+      </form>
+    </div>
+
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>时间</th><th>用户</th><th>操作</th>
+            <th>对象</th><th>详情</th><th>IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in logs %}
+          <tr>
+            <td>{{ l.created_at }}</td>
+            <td>{{ l.user_name }}</td>
+            <td>{{ l.action }}</td>
+            <td>{{ l.target }}</td>
+            <td>{{ l.detail }}</td>
+            <td>{{ l.ip }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      第 {{ page }} 页 / 共 {{ ((total-1)//size)+1 }} 页
+      {% if page>1 %}<a href="?page={{ page-1 }}">上一页</a>{% endif %}
+      {% if page*size<total %}<a href="?page={{ page+1 }}">下一页</a>{% endif %}
+    </div>
+
+  </main>
+</div>
+{% endblock %}

@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+
+    <div class="main-header">
+      <h1>人员管理</h1>
+      {% if not is_super_admin %}
+        <span class="sub-tip">（当前仅显示您的账号）</span>
+      {% endif %}
+    </div>
+
+    <div class="filter-bar">
+      <form class="filter" method="get">
+        <input name="u" placeholder="账号" value="{{ kw.u }}">
+        <input name="d" placeholder="显示名" value="{{ kw.d }}">
+        <button>查找</button>
+        {% if is_super_admin %}
+          <button type="button" onclick="openModal('newModal')">+ 添加用户</button>
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="table-scroll">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>账号</th><th>显示名</th><th>角色</th><th>创建时间</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.user_name }}</td>
+            <td>{{ u.display_name }}</td>
+            <td>{{ u.role }}</td>
+            <td>{{ u.created_at }}</td>
+            <td class="op-cell">
+
+              {# ---------- 系统管理员：全部操作 ---------- #}
+              {% if is_super_admin %}
+                {% if has_perm('users', 'edit') %}
+                  <button onclick="openPerm({{ u.id }}, '{{ u.user_name|e }}', '{{ u.display_name|e }}')">权限</button>
+                  <button onclick="changePwd({{ u.id }})">修改密码</button>
+                  {% if u.user_name != 'admin' %}
+                    <button onclick="delUser({{ u.id }})">删除</button>
+                  {% endif %}
+                {% endif %}
+            
+              {# ---------- 非系统管理员：只能改自己密码 ---------- #}
+              {% else %}
+                {% if u.id == session.user.id and has_perm('users', 'edit') %}
+                  <button onclick="changePwd({{ u.id }})">修改我的密码</button>
+                {% endif %}
+              {% endif %}
+            
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      第 {{ page }} 页 / 共 {{ ((total-1)//size)+1 if total>0 else 1 }} 页
+      {% if page>1 %}<a href="?page={{ page-1 }}">上一页</a>{% endif %}
+      {% if page*size<total %}<a href="?page={{ page+1 }}">下一页</a>{% endif %}
+    </div>
+
+  </main>
+</div>
+
+<!-- 新增用户弹框（只有 admin 会打开） -->
+{% if is_super_admin %}
+<div id="newModal" class="modal">
+  <form class="modal-box" method="post" action="{{ url_for('admin.user_new') }}"
+        onsubmit="return submitJson(event,this)">
+    <h3>添加用户</h3>
+    <input name="user_name" placeholder="账号*" required>
+    <input name="password" type="password" placeholder="密码*" required>
+    <input name="display_name" placeholder="显示名（真实姓名）">
+    <select name="role">
+      <option value="mobile">手机端用户</option>
+      <option value="admin">管理员</option>
+    </select>
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('newModal')">取消</button>
+      <button>保存</button>
+    </div>
+  </form>
+</div>
+
+<!-- 权限弹框（只有 admin 使用） -->
+<div id="permModal" class="modal">
+  <div class="modal-box modal-box-wide">
+    <h3>权限设置 —— <span id="permUserName"></span></h3>
+    <div id="permHint" class="perm-hint"></div>
+    <table class="perm-table">
+      <thead>
+        <tr><th style="width:60%;">模块</th><th style="width:20%;">查看</th><th style="width:20%;">编辑</th></tr>
+      </thead>
+      <tbody id="permRows"></tbody>
+    </table>
+    <div class="modal-actions">
+      <button type="button" onclick="closeModal('permModal')">取消</button>
+      <button type="button" id="permSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+function openModal(id){ document.getElementById(id).style.display = 'flex'; }
+function closeModal(id){ document.getElementById(id).style.display = 'none'; }
+
+async function submitJson(e, form){
+  e.preventDefault();
+  const r = await fetch(form.action, {method:'POST', body:new FormData(form)});
+  const j = await r.json();
+  if (j.ok) location.reload(); else alert(j.msg || '失败');
+  return false;
+}
+
+async function changePwd(id){
+  const p = prompt('输入新密码：');
+  if (!p) return;
+  const fd = new FormData(); fd.append('password', p);
+  const r = await fetch('/admin/users/' + id + '/password', {method:'POST', body:fd});
+  const j = await r.json();
+  alert(j.ok ? '修改成功' : (j.msg || '失败'));
+}
+
+async function delUser(id){
+  if (!confirm('确认删除？')) return;
+  const r = await fetch('/admin/users/' + id + '/delete', {method:'POST'});
+  const j = await r.json();
+  if (j.ok) location.reload(); else alert(j.msg);
+}
+
+{% if is_super_admin %}
+// ---------- 权限弹框（仅 admin 使用） ----------
+let currentPermUid = null;
+const PERM_MODULES = {
+  materials: {name:'物料管理', actions:['view','edit']},
+  types:     {name:'物料类别', actions:['view','edit']},
+  users:     {name:'人员管理', actions:['view','edit']},
+  qrcodes:   {name:'二维码打印', actions:['view']},
+  records:   {name:'出入库记录', actions:['view']},
+  logs:      {name:'操作日志', actions:['view']},
+  stats:     {name:'数据统计', actions:['view']},
+};
+
+async function openPerm(uid, userName, displayName){
+  currentPermUid = uid;
+  document.getElementById('permUserName').textContent =
+    displayName ? `${displayName} (${userName})` : userName;
+
+  const hint = document.getElementById('permHint');
+  const rows = document.getElementById('permRows');
+
+  if (userName === 'admin') {
+    hint.textContent = 'admin 账号拥有全部权限，不可修改。';
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
+
+  const r = await fetch(`/admin/users/${uid}/perms`);
+  const j = await r.json();
+  if (!j.ok) { alert(j.msg || '读取权限失败'); return; }
+
+  const perms = j.perms || {};
+  rows.innerHTML = '';
+
+  for (const [key, meta] of Object.entries(PERM_MODULES)) {
+    const p = perms[key] || {view:false, edit:false};
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.textContent = meta.name;
+    tr.appendChild(tdName);
+
+    const tdView = document.createElement('td');
+    if (meta.actions.includes('view')) {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.module = key;
+      cb.dataset.action = 'view';
+      cb.checked = !!p.view || !!p.edit;
+      cb.addEventListener('change', () => {
+        if (!cb.checked) {
+          const editCb = rows.querySelector(`input[data-module="${key}"][data-action="edit"]`);
+          if (editCb) editCb.checked = false;
+        }
+      });
+      tdView.appendChild(cb);
+    } else { tdView.textContent = '—'; }
+    tr.appendChild(tdView);
+
+    const tdEdit = document.createElement('td');
+    if (meta.actions.includes('edit')) {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.module = key;
+      cb.dataset.action = 'edit';
+      cb.checked = !!p.edit;
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          const viewCb = rows.querySelector(`input[data-module="${key}"][data-action="view"]`);
+          if (viewCb) viewCb.checked = true;
+        }
+      });
+      tdEdit.appendChild(cb);
+    } else { tdEdit.textContent = '—'; }
+    tr.appendChild(tdEdit);
+
+    rows.appendChild(tr);
+  }
+
+  if (userName === 'admin') {
+    rows.querySelectorAll('input[type=checkbox]').forEach(cb => cb.disabled = true);
+  }
+
+  openModal('permModal');
+}
+
+document.getElementById('permSaveBtn').addEventListener('click', async () => {
+  if (!currentPermUid) return;
+  const perms = {};
+  for (const key of Object.keys(PERM_MODULES)) perms[key] = {view:false, edit:false};
+  document.querySelectorAll('#permRows input[type=checkbox]').forEach(cb => {
+    if (cb.checked) perms[cb.dataset.module][cb.dataset.action] = true;
+  });
+
+  const r = await fetch(`/admin/users/${currentPermUid}/perms`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({perms}),
+  });
+  const j = await r.json();
+  if (j.ok) { alert('权限已保存'); closeModal('permModal'); }
+  else alert(j.msg || '保存失败');
+});
+{% endif %}
+</script>
+{% endblock %}

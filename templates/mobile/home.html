@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block body_class %}m-home{% endblock %}
+{% block title %}首页 - 低值易耗品管理{% endblock %}
+
+{% block body %}
+<header class="m-header">
+  <span>{{ session.user.display_name or session.user.username }}</span>
+  <a href="{{ url_for('mobile.logout') }}">退出</a>
+</header>
+
+<!-- 顶部功能入口 -->
+<div class="m-topbar">
+  <a class="m-topbtn blue" href="{{ url_for('mobile.inbound') }}">
+    <span class="icon">📥</span>
+    <span>来料入库</span>
+  </a>
+  <a class="m-topbtn green" href="{{ url_for('mobile.scan') }}">
+    <span class="icon">📷</span>
+    <span>扫码操作</span>
+  </a>
+</div>
+
+<!-- 物料列表 -->
+<section class="m-list-wrap">
+  <div class="m-list-head">
+    <h3>物料列表</h3>
+    <span class="m-list-count" id="listCount">共 {{ materials|length }} 项</span>
+  </div>
+
+  <!-- 搜索框 -->
+  <div class="m-list-search-wrap">
+    <input id="listSearch"
+           class="m-list-search"
+           type="search"
+           placeholder="搜索物料名称 / 物料号"
+           autocomplete="off"
+           autocapitalize="off"
+           autocorrect="off">
+    <button type="button"
+            class="m-list-search-clear"
+            id="clearSearch"
+            title="清空">✕</button>
+  </div>
+
+  {% if materials %}
+  <div class="m-list" id="materialList">
+    {% for m in materials %}
+    <a class="m-list-item"
+       data-no="{{ m.material_no|lower }}"
+       data-name="{{ (m.name or '')|lower }}"
+       href="{{ url_for('mobile.scan', materialNo=m.material_no) }}">
+      <div class="m-list-thumb">
+        {% if m.image_thumb or m.image %}
+          <img src="{{ url_for('static', filename=m.image_thumb or m.image) }}"
+               alt="{{ m.name }}"
+               loading="lazy">
+        {% else %}
+          <span class="no-img-mini">无图</span>
+        {% endif %}
+      </div>
+      <div class="m-list-main">
+        <div class="m-list-no">{{ m.material_no }}</div>
+        <div class="m-list-name">{{ m.name }}</div>
+      </div>
+      <div class="m-list-arrow">›</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="m-list-empty" id="listEmpty" style="display:none;">
+    没有匹配的物料
+  </div>
+  {% else %}
+  <div class="m-list-empty">暂无物料</div>
+  {% endif %}
+</section>
+
+<script>
+(function () {
+  const input    = document.getElementById('listSearch');
+  const clearBtn = document.getElementById('clearSearch');
+  const listEl   = document.getElementById('materialList');
+  const emptyEl  = document.getElementById('listEmpty');
+  const countEl  = document.getElementById('listCount');
+
+  if (!input || !listEl) return;
+
+  const items = Array.from(listEl.querySelectorAll('.m-list-item'));
+  const total = items.length;
+
+  function applyFilter() {
+    const q = input.value.trim().toLowerCase();
+    let visible = 0;
+
+    items.forEach(el => {
+      const no   = el.dataset.no   || '';
+      const name = el.dataset.name || '';
+      const hit  = !q || no.includes(q) || name.includes(q);
+      el.style.display = hit ? '' : 'none';
+      if (hit) visible++;
+    });
+
+    if (countEl) {
+      countEl.textContent = q
+        ? `匹配 ${visible} / 共 ${total} 项`
+        : `共 ${total} 项`;
+    }
+
+    if (emptyEl) {
+      emptyEl.style.display = visible === 0 ? 'flex' : 'none';
+    }
+
+    if (clearBtn) {
+      clearBtn.style.display = q ? 'flex' : 'none';
+    }
+  }
+
+  input.addEventListener('input', applyFilter);
+  input.addEventListener('search', applyFilter);   // 手机软键盘"搜索"键
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      input.focus();
+      applyFilter();
+    });
+  }
+
+  applyFilter();
+})();
+</script>
+{% endblock %}

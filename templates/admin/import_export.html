@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+{% include 'admin/_nav.html' %}
+<h2>📥📤 Excel 导入导出</h2>
+
+{% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
+{% if err %}<p class="err">{{ err }}</p>{% endif %}
+
+<div class="card">
+  <h3>导出</h3>
+  <p>导出全部物料、入库记录、出库记录、盘点记录。</p>
+  <a class="btn btn-green" href="{{ url_for('admin.admin_export_all') }}">下载 Excel（全部）</a>
+  <a class="btn" href="{{ url_for('admin.admin_export_materials') }}">仅导出物料</a>
+</div>
+
+<div class="card">
+  <h3>导入物料</h3>
+  <p>Excel 表头需包含：<code>物料号, 物料名称, 规格型号, 分类名称 单位, 备注, 库存</code>。<br>
+     已存在的物料号将<strong>更新</strong>名称/单位/备注/库存。</p>
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('admin.admin_import_materials') }}">
+    <input type="file" name="file" accept=".xlsx" required>
+    <button class="btn-green" type="submit">上传并导入</button>
+  </form>
+  <p><a href="{{ url_for('admin.admin_download_template') }}">下载导入模板</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+    <!-- 1. 标题（固定） -->
+    <div class="main-header">
+      <h1>物料类别</h1>
+    </div>  
+    <div class="filter-bar">
+
+    <!-- 搜索区 -->
+      <form class="filter" method="get">
+        <input name="no" placeholder="分类编号" value="{{ kw.no }}">
+        <input name="category" placeholder="分类名称" value="{{ kw.category }}">
+        <button>查找</button>
+        {% if has_perm('types', 'edit') %}
+          <button type="button" onclick="openModal('newModal')">+ 新增类别</button>
+        {% endif %}  
+        <label style="color: red;">55.99表示耗材，99.04表示工具</label>
+      </form>
+    </div>
+
+    <!-- 3. 表格容器（内部滚动） -->
+    <div class="filter-bar">
+    <!-- 列表 -->
+      <table class="table">
+        <thead>
+          <tr><th>分类编号</th><th>分类名称</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          {% for t in types %}
+          <tr>
+            <td>{{ t.type_no }}</td>
+            <td>{{ t.category }}</td>
+            <td>
+              {% if has_perm('types', 'edit') %}
+                <!-- ✅ 关键改动：把整条 dict 用 data-type 传出去 -->
+                <button class="btn-edit-type" data-type='{{ t | tojson | e }}'>编辑</button>
+                <button onclick="delType('{{ t.type_id }}')">删除</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 新增弹框（不变） -->
+    <div id="newModal" class="modal">
+      <form class="modal-box" method="post"
+            action="{{ url_for('admin.type_new') }}"
+            onsubmit="return submitJson(event,this)">
+        <h3>新增类别</h3>
+        <input name="type_no" placeholder="分类编号*" required>
+        <input name="category" placeholder="分类名称*" required>
+        <div class="modal-actions">
+          <button type="button" onclick="closeModal('newModal')">取消</button>
+          <button>保存</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 编辑弹框（不变） -->
+    <div id="editModal" class="modal">
+      <form class="modal-box" id="editForm" method="post"
+            onsubmit="return submitJson(event,this)">
+        <h3>编辑类别</h3>
+        <input name="type_no" required>
+        <input name="category" required>
+        <div class="modal-actions">
+          <button type="button" onclick="closeModal('editModal')">取消</button>
+          <button>保存</button>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+
+<script>
+function openModal(id){ document.getElementById(id).style.display = 'flex'; }
+function closeModal(id){ document.getElementById(id).style.display = 'none'; }
+
+/* ✅ 关键改动：参数 t 是完整对象 */
+function editType(t){
+  const f = document.getElementById('editForm');
+  f.action = '/admin/types/' + t.type_id + '/edit';
+  f.type_no.value = t.type_no || '';
+  f.category.value = t.category || '';
+  openModal('editModal');
+}
+
+/* ✅ 关键改动：事件绑定，从 data-type 读 JSON 并 parse */
+document.querySelectorAll('.btn-edit-type').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const t = JSON.parse(btn.dataset.type);
+    editType(t);
+  });
+});
+
+async function submitJson(e, form){
+  e.preventDefault();
+  const r = await fetch(form.action, {method:'POST', body:new FormData(form)});
+  const j = await r.json();
+  if (j.ok) location.reload(); else alert(j.msg || '失败');
+  return false;
+}
+
+async function delType(id){
+  if (!confirm('确认删除？')) return;
+  await fetch('/admin/types/' + id + '/delete', {method:'POST'});
+  location.reload();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}移动端登录{% endblock %}
+{% block body %}
+<div class="m-login">
+  <form method="post" class="m-card" autocomplete="on">
+    <h1>移动端登录</h1>
+
+    {% with m = get_flashed_messages() %}
+      {% if m %}<p class="err">{{ m[0] }}</p>{% endif %}
+    {% endwith %}
+
+    <input type="hidden" name="next" value="{{ next_url or '' }}">
+
+    <input name="user_name" placeholder="账号" required
+           autocomplete="username" autocapitalize="off" autocorrect="off">
+
+    <input name="password" type="password" placeholder="密码" required
+           autocomplete="current-password">
+
+    <button type="submit">登 录</button>
+  </form>
+</div>
+{% endblock %}

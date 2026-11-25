@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}物料类别{% endblock %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="content">
+    <h1>物料类别</h1>
+
+    <form class="filter-bar" method="get">
+      <input name="no"  placeholder="分类编号" value="{{ q_no }}">
+      <input name="cat" placeholder="分类名称" value="{{ q_cat }}">
+      <button type="submit">查询</button>
+      <button type="button" onclick="openNew()">+ 新增类别</button>
+    </form>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>分类编号</th>
+          <th>分类名称</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in categories %}
+        <tr>
+          <td>{{ c.type_no }}</td>
+          <td>{{ c.category }}</td>
+          <td>
+            <button onclick="openEdit('{{ c.type_id }}')">编辑</button>
+            <button onclick="delCategory('{{ c.type_id }}')">删除</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="pager">
+      共 {{ total }} 条 / {{ pages }} 页
+      {% if page > 1 %}
+        <a href="?page={{ page-1 }}&no={{ q_no }}&cat={{ q_cat }}">上一页</a>
+      {% endif %}
+      <span>第 {{ page }} 页</span>
+      {% if page < pages %}
+        <a href="?page={{ page+1 }}&no={{ q_no }}&cat={{ q_cat }}">下一页</a>
+      {% endif %}
+    </div>
+  </main>
+</div>
+
+<!-- 新增/编辑弹框 -->
+<div id="modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <h3 id="modalTitle">新增物料类别</h3>
+    <form id="categoryForm">
+      <label>分类编号*<input name="type_no" id="f_no" required></label>
+      <label>分类名称*<input name="category" id="f_cat" required></label>
+      <div class="actions">
+        <button type="submit">保存</button>
+        <button type="button" onclick="closeModal()">取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let editing = false;
+let editingId = null;   // 现在存整数 type_id
+
+function openNew() {
+  editing = false;
+  editingId = null;
+  document.getElementById('modalTitle').innerText = '新增物料类别';
+  document.getElementById('categoryForm').reset();
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function openEdit(c) {
+  editing = true;
+  editingId = c.type_id;             // 整数主键
+  document.getElementById('modalTitle').innerText = '编辑物料类别';
+  document.getElementById('f_no').value  = c.type_no || '';
+  document.getElementById('f_cat').value = c.category || '';
+  document.getElementById('modal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+
+document.getElementById('categoryForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = editing
+    ? `/admin/categories/${editingId}/edit`
+    : '/admin/categories/new';
+  const res = await fetch(url, { method: 'POST', body: new FormData(e.target) });
+  const j = await res.json();
+  if (j.ok) location.reload();
+  else alert(j.msg || '保存失败');
+});
+
+function delCategory(typeId) {
+  if (!confirm('确认删除该分类？')) return;
+  fetch(`/admin/categories/${typeId}/delete`, { method: 'POST' })
+    .then(r => r.json())
+    .then(j => { if (j.ok) location.reload(); else alert(j.msg); });
+}
+</script>
+{% endblock %}

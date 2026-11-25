@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="m-header">
+  <a href="{{ url_for('mobile.home') }}">← 返回</a>
+  <span>来料入库</span>
+</header>
+
+<form class="m-form" id="inboundForm">
+  <label>物料号*
+    <input name="material_no" required autocomplete="off" onblur="loadMaterial(this.value)">
+  </label>
+  <label>物料名称<input name="name"></label>
+  <label>规格型号<input name="spec"></label>
+  <label>分类名称
+    <select name="category">
+      <option value="">请选择</option>
+      {% for t in types %}<option value="{{ t.category }}">{{ t.category }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>单位<input name="unit"></label>
+  <label>数量*<input name="quantity" type="number" min="1" required></label>
+  <label>备注<input name="remark"></label>
+  <button type="submit">确认入库</button>
+</form>
+
+<script>
+async function loadMaterial(no){
+  if(!no) return;
+  const r = await fetch('/api/material/' + encodeURIComponent(no));
+  const j = await r.json();
+  if(j.ok){
+    const f = document.getElementById('inboundForm');
+    for(const k of ['name','spec','category','unit']){
+      if(j.data[k]) f[k].value = j.data[k];
+    }
+  }
+}
+
+document.getElementById('inboundForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn  = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const r = await fetch('', { method: 'POST', body: new FormData(form) });
+    const j = await r.json();
+    if (j.ok) {
+      location.href = j.redirect;
+    } else {
+      alert(j.msg || '失败');
+      btn.disabled = false;
+    }
+  } catch (err) {
+    alert('网络错误：' + err.message);
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="m-header"><span>完成</span></header>
+<div class="m-done">
+  <h2>{{ msg }}</h2>
+  <a class="m-btn" href="{{ back or url_for('mobile.home') }}">返回</a>
+  <a class="m-btn m-btn-plain" href="{{ url_for('mobile.home') }}">回首页</a>
+</div>
+{% endblock %}

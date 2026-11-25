@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="m-header">
+  <a href="{{ material and url_for('mobile.scan', materialNo=material.material_no) or url_for('mobile.home') }}">← 返回</a>
+  <span>数据盘点</span>
+</header>
+
+{% if not material %}
+<form class="m-form" method="get">
+  <label>物料号<input name="materialNo" required autocomplete="off"></label>
+  <button>查询</button>
+</form>
+
+{% else %}
+<form class="m-form" id="stocktakeForm">
+  <input type="hidden" name="material_no" value="{{ material.material_no }}">
+
+  <div class="m-form-info">
+    <div class="row"><span>物料号</span><b>{{ material.material_no }}</b></div>
+    <div class="row"><span>名称</span><b>{{ material.name }}</b></div>
+    <div class="row"><span>当前库存</span><b class="qty">{{ material.quantity }}</b></div>
+  </div>
+
+  <label>盘点后数量*<input name="after_qty" type="number" min="0" required></label>
+  <label>备注<input name="remark"></label>
+
+  <button type="submit">提交盘点</button>
+</form>
+
+<script>
+document.getElementById('stocktakeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const btn  = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const r = await fetch('', { method: 'POST', body: new FormData(form) });
+    const j = await r.json();
+    if (j.ok) {
+      location.href = j.redirect;
+    } else {
+      alert(j.msg || '失败');
+      btn.disabled = false;
+    }
+  } catch (err) {
+    alert('网络错误：' + err.message);
+    btn.disabled = false;
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

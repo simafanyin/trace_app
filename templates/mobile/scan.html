@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="m-header">
+  <a href="{{ url_for('mobile.home') }}">← 返回</a>
+  <span>{% if material %}物料详情{% else %}扫码{% endif %}</span>
+</header>
+
+{% if not material %}
+  <div class="m-scan">
+    <p class="hint">请用手机系统相机扫描物料二维码</p>
+    <p class="hint">或手动输入物料号：</p>
+    <form onsubmit="event.preventDefault(); location.href='/m/scan?materialNo=' + encodeURIComponent(this.no.value);">
+      <input name="no" placeholder="物料号" required autocomplete="off">
+      <button type="submit">前往</button>
+    </form>
+  </div>
+
+{% else %}
+  <div class="m-detail">
+
+    <div class="m-detail-img">
+      {% if material.image_thumb or material.image %}
+        <img class="detail-thumb"
+             src="{{ url_for('static', filename=material.image_thumb or material.image) }}"
+             data-src="{{ url_for('static', filename=material.image or material.image_thumb) }}"
+             alt="{{ material.name }}"
+             onclick="showBig(this.dataset.src)">
+      {% else %}
+        <div class="no-img-box">暂无图片</div>
+      {% endif %}
+    </div>
+
+    <div class="m-detail-info">
+      <div class="row"><span>物料号</span><b>{{ material.material_no }}</b></div>
+      <div class="row"><span>名称</span><b>{{ material.name }}</b></div>
+      <div class="row"><span>规格</span><b>{{ material.spec or '-' }}</b></div>
+      <div class="row"><span>分类</span><b>{{ material.category or '-' }}</b></div>
+      <div class="row"><span>单位</span><b>{{ material.unit or '-' }}</b></div>
+      <div class="row"><span>库存</span><b class="qty">{{ material.quantity }}</b></div>
+      <div class="row"><span>备注</span><b>{{ material.remark or '-' }}</b></div>
+      <div class="row"><span>更新时间</span><b>{{ material.updated_at }}</b></div>
+    </div>
+
+    <div class="m-detail-actions">
+      <a class="m-action-btn green"
+         href="{{ url_for('mobile.outbound', materialNo=material.material_no) }}">
+        <span class="icon">📤</span>
+        <span class="label">领用出库</span>
+      </a>
+      <a class="m-action-btn orange"
+         href="{{ url_for('mobile.stocktake', materialNo=material.material_no) }}">
+        <span class="icon">📋</span>
+        <span class="label">数据盘点</span>
+      </a>
+    </div>
+  </div>
+
+  <div id="bigImgLayer" class="big-img-layer" onclick="hideBig()">
+    <img id="bigImg" src="">
+  </div>
+
+  <script>
+  function showBig(src){
+    document.getElementById('bigImg').src = src;
+    document.getElementById('bigImgLayer').style.display = 'flex';
+  }
+  function hideBig(){
+    document.getElementById('bigImgLayer').style.display = 'none';
+  }
+  </script>
+{% endif %}
+{% endblock %}

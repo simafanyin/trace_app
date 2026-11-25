@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="layout">
+  {% include "admin/_nav.html" %}
+  <main class="main">
+
+    <div class="main-header">
+      <h1>二维码打印</h1>
+    </div>
+
+    <!-- 查找条件 -->
+    <div class="filter-bar">
+      <form class="filter" method="get">
+        <input name="no" placeholder="物料号" value="{{ kw.no }}">
+        <input name="name" placeholder="物料名称" value="{{ kw.name }}">
+        <button type="submit">查找</button>
+        <button type="button" class="btn-reset"
+                onclick="location.href='{{ url_for('admin.qrcodes') }}'">重置</button>
+      </form>
+      <div class="filter-actions">
+        <a class="btn" href="{{ url_for('admin.qrcodes_download', no=kw.no, name=kw.name) }}">
+          下载 Word 文档
+        </a>
+        <button type="button" onclick="window.print()">打印本页</button>
+        <span class="hint">右键保存图片或直接打印（建议 ≥3cm × 3cm）</span>
+      </div>
+    </div>
+
+    <!-- 二维码网格：滚动区 -->
+    <div class="table-scroll">
+      {% if materials %}
+      <div class="qr-grid">
+        {% for m in materials %}
+        <div class="qr-item">
+          <img src="{{ url_for('api.qrcode_img', no=m.material_no) }}"
+               alt="{{ m.material_no }}">
+          <div class="qr-no">{{ m.material_no }}</div>
+          <div class="qr-name">{{ m.name }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="qr-empty">没有匹配的物料</div>
+      {% endif %}
+    </div>
+
+  </main>
+</div>
+{% endblock %}

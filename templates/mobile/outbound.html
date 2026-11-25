@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="m-header">
+  <a href="{{ material and url_for('mobile.scan', materialNo=material.material_no) or url_for('mobile.home') }}">← 返回</a>
+  <span>领用出库</span>
+</header>
+
+{% if not material %}
+<form class="m-form" method="get">
+  <label>物料号<input name="materialNo" required autocomplete="off"></label>
+  <button>查询</button>
+</form>
+
+{% else %}
+<form class="m-form" id="outboundForm">
+  <input type="hidden" name="material_no" value="{{ material.material_no }}">
+
+  <!-- 物料信息（含类别，只读展示） -->
+  <div class="m-form-info">
+    <div class="row"><span>物料号</span><b>{{ material.material_no }}</b></div>
+    <div class="row"><span>名称</span><b>{{ material.name }}</b></div>
+    <div class="row"><span>物料类别</span><b>{{ material.category or '-' }}</b></div>
+    <div class="row"><span>单位</span><b>{{ material.unit or '-' }}</b></div>
+    <div class="row"><span>库存</span><b class="qty">{{ material.quantity }}</b></div>
+  </div>
+
+  <!-- 领用数量 -->
+  <label>领用数量*
+    <input name="quantity" type="number" min="1" max="{{ material.quantity }}" required>
+  </label>
+
+  <!-- 归属：必填 -->
+  <label>归属*
+    <select name="belong" required>
+      <option value="">请选择</option>
+      {% for b in belongs %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+    </select>
+  </label>
+
+  <!-- 备注 -->
+  <label>备注<input name="remark"></label>
+
+  <button type="submit">确认出库</button>
+</form>
+
+<script>
+document.getElementById('outboundForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+
+  // 归属必填
+  if (!form.belong.value) { alert('请选择归属'); return; }
+
+  // 数量校验
+  const qty = parseInt(form.quantity.value || '0', 10);
+  const max = parseInt(form.quantity.max || '0', 10);
+  if (qty <= 0) { alert('领用数量必须大于 0'); return; }
+  if (max && qty > max) { alert('领用数量不能超过库存'); return; }
+
+  const btn = form.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const r = await fetch('', { method: 'POST', body: new FormData(form) });
+    const j = await r.json();
+    if (j.ok) {
+      location.href = j.redirect;
+    } else {
+      alert(j.msg || '失败');
+      btn.disabled = false;
+    }
+  } catch (err) {
+    alert('网络错误：' + err.message);
+    btn.disabled = false;
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

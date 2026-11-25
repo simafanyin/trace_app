@@ -1,0 +1,33 @@
+<aside class="nav">
+  <h2>低值易耗品</h2>
+
+  {% if has_perm('materials', 'view') %}
+    <a href="{{ url_for('admin.materials') }}">物料管理</a>
+  {% endif %}
+
+  {% if has_perm('types', 'view') %}
+    <a href="{{ url_for('admin.types') }}">物料类别</a>
+  {% endif %}
+
+  {% if has_perm('users', 'view') %}
+    <a href="{{ url_for('admin.users') }}">人员管理</a>
+  {% endif %}
+
+  {% if has_perm('qrcodes', 'view') %}
+    <a href="{{ url_for('admin.qrcodes') }}">二维码打印</a>
+  {% endif %}
+
+  {% if has_perm('records', 'view') %}
+    <a href="{{ url_for('admin.records') }}">出入库记录</a>
+  {% endif %}
+
+  {% if has_perm('logs', 'view') %}
+    <a href="{{ url_for('admin.logs') }}">操作日志</a>
+  {% endif %}
+
+  {% if has_perm('stats', 'view') %}
+    <a href="{{ url_for('admin.stats') }}">数据统计</a>
+  {% endif %}
+
+  <a class="logout" href="{{ url_for('admin.logout') }}">退出</a>
+</aside>

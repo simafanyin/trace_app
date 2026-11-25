@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <title>{% block title %}低值易耗品管理{% endblock %}</title>
+
+  {% if request.path.startswith('/admin') %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin/admin.css') }}">
+  {% else %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='mobile/mobile.css') }}">
+  {% endif %}
+
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if request.path.startswith('/admin') %}admin-body{% endif %} {% block body_class %} {% endblock %}">
+{% block body %}{% endblock %}
+</body>
+</html>
